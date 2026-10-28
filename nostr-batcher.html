@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<title>nostr-batcher</title>
+<script>
+(function(){var s=null;try{s=localStorage.getItem("age-theme");}catch(e){}if(s==="light"||s==="dark")document.documentElement.setAttribute("data-theme",s);})();
+</script>
+<style>
+:root{
+  --bg:#12140f;--panel:#1c1f18;--panel-2:#262a21;--well:#10130e;--line:#31362b;--line-soft:#2a2e25;--line-hover:#4a5040;
+  --text:#ece7d8;--muted:#a39c8b;--faint:#8a8476;--accent:#d6a24a;--accent-ink:#1a1408;--accent-soft:rgba(214,162,74,.14);
+  --ok:#8fbf7a;--ok-line:#3d5334;--warn:#d6a24a;--bad:#d27a6a;--bad-line:#6a3a34;--bad-soft:rgba(210,122,106,.08);
+  --glow:#2a2618;--drop-bg:#262214;color-scheme:dark;
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;--sans:"Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){:root:not([data-theme="dark"]){
+  --bg:#f5f2e9;--panel:#fffdf7;--panel-2:#efeadc;--well:#f3efe4;--line:#d8d0bb;--line-soft:#e5dfcf;--line-hover:#b9ae93;
+  --text:#24211a;--muted:#6b6454;--faint:#857e6d;--accent:#d6a24a;--accent-ink:#1a1408;--accent-soft:rgba(214,162,74,.18);
+  --ok:#3d7a2c;--ok-line:#a9c99b;--warn:#9a6a1a;--bad:#b4503f;--bad-line:#e2b9b0;--bad-soft:rgba(180,80,63,.07);
+  --glow:#f3e6c4;--drop-bg:#f7ecd2;color-scheme:light;}}
+:root[data-theme="light"]{
+  --bg:#f5f2e9;--panel:#fffdf7;--panel-2:#efeadc;--well:#f3efe4;--line:#d8d0bb;--line-soft:#e5dfcf;--line-hover:#b9ae93;
+  --text:#24211a;--muted:#6b6454;--faint:#857e6d;--accent:#d6a24a;--accent-ink:#1a1408;--accent-soft:rgba(214,162,74,.18);
+  --ok:#3d7a2c;--ok-line:#a9c99b;--warn:#9a6a1a;--bad:#b4503f;--bad-line:#e2b9b0;--bad-soft:rgba(180,80,63,.07);
+  --glow:#f3e6c4;--drop-bg:#f7ecd2;color-scheme:light;}
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(1200px 500px at 10% -10%,var(--glow) 0%,transparent 50%),var(--bg);color:var(--text);font:15px/1.5 var(--sans)}
+main{max-width:720px;margin:0 auto;padding:28px 18px 64px}
+header{display:flex;justify-content:space-between;align-items:flex-start;gap:12px 16px}
+.header-tools{display:flex;align-items:center;gap:10px;flex-shrink:0}
+@media (max-width:520px){header{flex-wrap:wrap}.header-tools{order:-1;width:100%;justify-content:space-between}}
+h1{font-size:1.7rem;margin:0 0 6px;letter-spacing:-.02em;line-height:1.2}
+h1 small{font-size:.5em;font-weight:600;color:var(--faint);letter-spacing:.02em;vertical-align:middle;border:1px solid var(--line);border-radius:999px;padding:2px 8px;margin-left:6px}
+.sub{color:var(--muted);margin:0 0 4px;max-width:62ch}
+.sub code,code{font-family:var(--mono);font-size:.92em}
+.pill{display:inline-block;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--ok);border:1px solid var(--ok-line);border-radius:999px;padding:3px 10px;white-space:nowrap}
+#theme-toggle{width:38px;height:38px;padding:0;display:inline-grid;place-items:center;color:var(--muted)}
+#theme-toggle:hover{color:var(--text)}
+#theme-toggle svg{width:18px;height:18px}
+#theme-toggle .sun{display:none}
+:root[data-effective-theme="dark"] #theme-toggle .sun{display:block}
+:root[data-effective-theme="dark"] #theme-toggle .moon{display:none}
+
+fieldset{border:1px solid var(--line);border-radius:14px;margin:16px 0 0;padding:14px 16px 16px;background:var(--panel);min-width:0}
+legend{font-weight:700;padding:0 6px;margin-left:-6px;font-size:14.5px}
+#drop{border:1.5px dashed var(--line);border-radius:12px;padding:22px 16px;text-align:center;cursor:pointer;background:transparent;transition:border-color .15s,background-color .15s;color:var(--text)}
+#drop:hover{border-color:var(--line-hover)}
+#drop.over{background:var(--drop-bg);border-color:var(--accent)}
+#drop:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#drop .drop-cta{display:inline-block;background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:8px 14px;font-weight:650;margin-bottom:6px}
+#drop #fname{display:block;margin-top:4px}
+#drop.has-file #fname{color:var(--text);font-weight:600}
+.bigwarn{margin:10px 0 0;padding:8px 12px;border-left:3px solid var(--warn);background:var(--accent-soft);border-radius:0 8px 8px 0;font-size:14px}
+#switched{margin:10px 0 0;font-weight:600;color:var(--accent);font-size:14px}
+
+fieldset label.mode{display:flex;align-items:center;gap:10px;padding:10px 12px;margin:0 0 8px;cursor:pointer;border:1px solid var(--line);border-radius:10px;background:var(--well);transition:border-color .15s,background-color .15s}
+fieldset label.mode:hover{border-color:var(--line-hover)}
+fieldset label.mode:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+input[type=radio],input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;margin:0;flex-shrink:0}
+#encopts{display:flex;flex-wrap:wrap;gap:6px 18px;margin-bottom:10px}
+#encopts br{display:none}
+#encopts label,#gen>label{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+
+#gen p{margin:10px 0}
+#words{font:1.15em/1.6 var(--mono);background:var(--well);border:1px solid var(--line-soft);padding:10px 12px;border-radius:10px;word-break:break-word;user-select:all;margin:6px 0 10px;display:flex;flex-wrap:wrap;gap:6px 8px;counter-reset:w}
+#words .w{counter-increment:w;background:var(--panel-2);border:1px solid var(--line);border-radius:7px;padding:2px 9px}
+#words .w::before{content:counter(w);font:600 11px/1 var(--sans);color:var(--faint);margin-right:7px;vertical-align:2px;user-select:none}
+.words-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.words-tools .count{display:inline-flex;align-items:center;gap:8px;margin-left:8px}
+.warnline{background:var(--accent-soft);border-left:3px solid var(--accent);padding:8px 12px;border-radius:0 8px 8px 0}
+
+input[type=password],input[type=text].pw,input[type=number]{font:inherit;font-size:15px;padding:9px 12px;width:100%;margin:4px 0 2px;background:var(--well);color:var(--text);border:1px solid var(--line);border-radius:9px}
+input[type=number]{width:5em;padding:6px 8px;margin:0}
+input:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:transparent}
+#own label{display:block;margin-top:10px;font-weight:600;font-size:14px}
+.pw-field{position:relative}
+.pw-field input{padding-right:70px}
+.pw-show{position:absolute;right:6px;top:50%;transform:translateY(-50%);padding:4px 10px;font-size:13px;min-height:0}
+
+button{font:inherit;font-size:15px;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--panel-2);color:var(--text);cursor:pointer;transition:border-color .15s,filter .15s,transform .08s}
+button:hover:not(:disabled){border-color:var(--line-hover)}
+button:active:not(:disabled){transform:scale(.97)}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button.main{background:var(--accent);color:var(--accent-ink);border-color:transparent;font-weight:700;padding:11px 20px;font-size:16px}
+button.main:hover:not(:disabled){filter:brightness(1.07)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.actions{display:flex;align-items:center;flex-wrap:wrap;gap:8px 14px;margin:20px 0 0}
+#why{color:var(--muted);font-size:14px}
+
+#status{margin-top:14px;white-space:pre-wrap;border-radius:10px}
+#status:empty{display:none}
+#status.ok,#status.err,#status.working{padding:10px 14px;border:1px solid}
+#status.ok{color:var(--ok);border-color:var(--ok-line)}
+#status.err{color:var(--bad);border-color:var(--bad-line);background:var(--bad-soft)}
+#status.working{color:var(--text);border-color:var(--line);display:flex;align-items:center;gap:10px}
+#status.working::before{content:"";width:16px;height:16px;border-radius:50%;border:2px solid var(--accent);border-right-color:transparent;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+.hidden{display:none!important}
+small{color:var(--muted);font-size:13px}
+.credits{margin-top:22px;color:var(--muted);font-size:13px}
+.site-footer{margin-top:22px;padding-top:14px;border-top:1px solid var(--line-soft);display:flex;align-items:center;justify-content:center;gap:10px;color:var(--faint);font-size:12.5px}
+.site-footer .version{font-family:var(--mono)}
+.site-footer a{display:inline-flex;align-items:center;gap:6px;color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:7px;transition:color .15s,background-color .15s}
+.site-footer a:hover{color:var(--accent);background:var(--accent-soft)}
+.site-footer a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.site-footer svg{width:14px;height:14px}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation-duration:.01ms!important}}
+/* nostr-batcher additions, built from the same tokens */
+input[type=number]#count{width:7em}
+input[type=text].pfx{font:inherit;font-family:var(--mono);font-size:15px;padding:9px 12px;width:12em;max-width:100%;margin:4px 0 2px;background:var(--well);color:var(--text);border:1px solid var(--line);border-radius:9px}
+.inline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px}
+.inline .lead{font-family:var(--mono);color:var(--muted)}
+.hint{margin:8px 0 0}
+#bar{height:6px;border-radius:999px;background:var(--panel-2);border:1px solid var(--line-soft);overflow:hidden;margin-top:14px}
+#bar i{display:block;height:100%;width:0;background:var(--accent);transition:width .1s}
+.res-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:12px 0 0}
+.reveal{display:flex;align-items:center;gap:8px;margin:12px 0 0;cursor:pointer}
+.tablewrap{margin-top:10px;border:1px solid var(--line-soft);border-radius:10px;background:var(--well);overflow-x:auto}
+table{border-collapse:collapse;width:100%;font:12.5px/1.45 var(--mono)}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--line-soft);vertical-align:top;word-break:break-all}
+tr:last-child td{border-bottom:0}
+th{color:var(--faint);font:600 11px/1.2 var(--sans);letter-spacing:.05em;text-transform:uppercase;background:var(--panel-2)}
+td.n{color:var(--faint);width:2.6em}
+td.sec{color:var(--bad)}
+td b.hit{color:var(--accent);font-weight:700}
+td.cp{white-space:nowrap;width:1%}
+@media (min-width:601px){td.sec.masked{white-space:nowrap}}
+button.mini{font:600 11px/1 var(--sans);padding:5px 8px;margin-right:4px;border-radius:7px;min-height:0}
+td .short{display:none}
+@media (max-width:600px){
+  td .full{display:none}td .short{display:inline}
+  th,td{padding:7px 5px}td.n{width:1.6em}
+  td.cp button.mini{display:block;margin:0 0 4px;width:100%}td.cp button.mini:last-child{margin-bottom:0}
+  td.sec{word-break:break-all}
+}
+</style></head><body>
+<main>
+<header>
+<div>
+<h1>nostr-batcher <small>v1.04</small></h1>
+<p class="sub">Generate batches of <b>nostr</b> keypairs (npub / nsec, plus hex) and export them. Works offline; nothing leaves this page.</p>
+<p class="sub">Terminal: <code>python3 nostr_batcher.py</code> opens a TUI, or <code>python3 nostr_batcher.py -n 50 -f csv -o keys.csv</code>.</p>
+</div>
+<div class="header-tools">
+<span class="pill" title="Everything is bundled in this page; it makes no network connections">Works offline</span>
+<button type="button" id="theme-toggle" aria-label="Switch colour scheme">
+<svg class="moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+<svg class="sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+</button>
+</div>
+</header>
+
+<fieldset><legend>1. How many keys?</legend>
+<div class="inline"><label for="count">Number of keypairs:</label> <input type="number" id="count" min="1" max="10000" value="10"> <small>1 to 10000</small></div>
+</fieldset>
+
+<fieldset><legend>2. Vanity prefix (optional)</legend>
+<div class="inline"><label for="prefix" class="lead">npub1</label><input type="text" class="pfx" id="prefix" maxlength="8" placeholder="leave empty" autocomplete="off" autocapitalize="off" spellcheck="false"></div>
+<p class="hint"><small id="vhint">Empty = random keys. Allowed: <code>qpzry9x8gf2tvdw0s3jn54khce6mua7l</code> (no 1, b, i, o). Each extra character makes the search 32 times slower.</small></p>
+</fieldset>
+
+<fieldset><legend>3. Export format</legend>
+<label class="mode"><input type="radio" name="fmt" value="json" checked> JSON (all fields, with timestamp)</label>
+<label class="mode"><input type="radio" name="fmt" value="csv"> CSV (npub, nsec, pubkey_hex, privkey_hex)</label>
+<label class="mode"><input type="radio" name="fmt" value="jsonl"> JSON Lines (one key per line)</label>
+<label class="mode"><input type="radio" name="fmt" value="txt"> Plain text (readable blocks)</label>
+<label class="mode"><input type="radio" name="fmt" value="nsec"> nsec list only (one per line)</label>
+<label class="mode"><input type="radio" name="fmt" value="npub"> npub list only (one per line)</label>
+</fieldset>
+
+<div class="actions"><button class="main" id="go">Generate keys</button><button type="button" id="cancel" class="hidden">Cancel</button><small id="why" aria-live="polite"></small></div>
+<div id="bar" class="hidden"><i></i></div>
+<div id="status" role="status" aria-live="polite"></div>
+
+<fieldset id="results" class="hidden"><legend>4. Your keys</legend>
+<p class="warnline"><b>The nsec values are the private keys.</b> Whoever has one controls that identity for good. Save the file somewhere private. This page stores nothing: closing it loses keys you have not downloaded.</p>
+<div class="res-tools">
+<button type="button" class="main" id="dl">Download</button>
+<button type="button" id="copy">Copy to clipboard</button>
+<button type="button" id="clear">Clear keys</button>
+</div>
+<label class="reveal"><input type="checkbox" id="reveal"> Show nsec values on screen</label>
+<div class="tablewrap"><table><thead><tr><th>#</th><th>npub</th><th>nsec</th><th>Copy</th></tr></thead><tbody id="rows"></tbody></table></div>
+<p class="hint"><small id="shown"></small></p>
+</fieldset>
+
+<p class="credits"><small>Public key = x-only coordinate of secret &times; G on secp256k1 (BIP-340, as used by NIP-01). npub/nsec = NIP-19 bech32 of the raw 32 bytes. Secrets come from <code>crypto.getRandomValues</code> with rejection sampling; the curve math is plain JavaScript BigInt, bundled inside this file. Compatible with the Python tool and any nostr client.</small></p>
+<div class="site-footer">
+<a href="https://allesvoorbitcoin.be/donate" target="_blank" rel="noopener noreferrer">
+<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20.5s-7.5-4.6-9.2-9.4C1.6 7.6 4 4.5 7.3 4.5c2 0 3.6 1.1 4.7 2.7 1.1-1.6 2.7-2.7 4.7-2.7 3.3 0 5.7 3.1 4.5 6.6-1.7 4.8-9.2 9.4-9.2 9.4z"/></svg>
+Donate<span class="sr-only"> (opens in a new tab)</span></a>
+</div>
+</main>
+
+<script id="core">
+"use strict";
+const P = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEFFFFFC2Fn;
+const N = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141n;
+const GX = 0x79BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798n;
+const GY = 0x483ADA7726A3C4655DA4FBFC0E1108A8FD17B448A68554199C47D08FFB10D4B8n;
+const INF = [0n, 1n, 0n], G = [GX, GY, 1n];
+const mod = a => { const r = a % P; return r >= 0n ? r : r + P; };
+
+function jdbl(p){
+  const [X, Y, Z] = p;
+  if (Z === 0n || Y === 0n) return INF;
+  const ysq = Y * Y % P, S = 4n * X * ysq % P, M = 3n * X * X % P;
+  const X2 = mod(M * M - 2n * S);
+  return [X2, mod(M * (S - X2) - 8n * ysq * ysq), 2n * Y * Z % P];
+}
+function jadd(p, q){
+  if (p[2] === 0n) return q;
+  if (q[2] === 0n) return p;
+  const [X1, Y1, Z1] = p, [X2, Y2, Z2] = q;
+  const Z1s = Z1 * Z1 % P, Z2s = Z2 * Z2 % P;
+  const U1 = X1 * Z2s % P, U2 = X2 * Z1s % P;
+  const S1 = Y1 * Z2 * Z2s % P, S2 = Y2 * Z1 * Z1s % P;
+  if (U1 === U2) return S1 === S2 ? jdbl(p) : INF;
+  const H = mod(U2 - U1), R = mod(S2 - S1), H2 = H * H % P, H3 = H * H2 % P, V = U1 * H2 % P;
+  const X3 = mod(R * R - H3 - 2n * V);
+  return [X3, mod(R * (V - X3) - S1 * H3), H * Z1 * Z2 % P];
+}
+function mulG(d){
+  let acc = INF, base = G;
+  while (d > 0n){ if (d & 1n) acc = jadd(acc, base); base = jdbl(base); d >>= 1n; }
+  return acc;
+}
+function powmod(b, e, m){ let r = 1n; b %= m; while (e > 0n){ if (e & 1n) r = r * b % m; b = b * b % m; e >>= 1n; } return r; }
+function affineX(p){ const zi = powmod(p[2], P - 2n, P); return p[0] * zi % P * zi % P; }
+function pubkeyX(d){ if (d < 1n || d >= N) throw new Error("secret out of range"); return affineX(mulG(d)); }
+
+function randScalar(){
+  const b = new Uint8Array(32);
+  for (;;){
+    crypto.getRandomValues(b);
+    let d = 0n; for (const v of b) d = (d << 8n) | BigInt(v);
+    if (d >= 1n && d < N) return d;   // rejection sampling: uniform in [1, N-1]
+  }
+}
+const hex32 = n => n.toString(16).padStart(64, "0");
+const bytes32 = n => Uint8Array.from(hex32(n).match(/../g), h => parseInt(h, 16));
+
+// bech32 (BIP-173, constant 1), as NIP-19 requires
+const CHARSET = "qpzry9x8gf2tvdw0s3jn54khce6mua7l";
+const GEN = [0x3b6a57b2, 0x26508e6d, 0x1ea119fa, 0x3d4233dd, 0x2a1462b3];
+function polymod(v){
+  let chk = 1;
+  for (const x of v){
+    const b = chk >>> 25; chk = ((chk & 0x1ffffff) << 5) ^ x;
+    for (let i = 0; i < 5; i++) if ((b >>> i) & 1) chk ^= GEN[i];
+  }
+  return chk >>> 0;
+}
+const hrpExpand = h => [...h].map(c => c.charCodeAt(0) >> 5).concat([0], [...h].map(c => c.charCodeAt(0) & 31));
+function to5(bytes){
+  let acc = 0, bits = 0; const out = [];
+  for (const v of bytes){ acc = (acc << 8) | v; bits += 8; while (bits >= 5){ bits -= 5; out.push((acc >> bits) & 31); } acc &= (1 << bits) - 1; }
+  if (bits) out.push((acc << (5 - bits)) & 31);
+  return out;
+}
+function bech32Encode(hrp, bytes){
+  const d = to5(bytes), pm = polymod(hrpExpand(hrp).concat(d, [0, 0, 0, 0, 0, 0])) ^ 1;
+  const chk = []; for (let i = 0; i < 6; i++) chk.push((pm >>> (5 * (5 - i))) & 31);
+  return hrp + "1" + d.concat(chk).map(x => CHARSET[x]).join("");
+}
+function bech32Decode(s){
+  s = s.toLowerCase(); const pos = s.lastIndexOf("1");
+  if (pos < 1 || pos + 7 > s.length) throw new Error("bad bech32");
+  const data = [...s.slice(pos + 1)].map(c => { const i = CHARSET.indexOf(c); if (i < 0) throw new Error("bad char"); return i; });
+  const hrp = s.slice(0, pos);
+  if (polymod(hrpExpand(hrp).concat(data)) !== 1) throw new Error("bad checksum");
+  let acc = 0, bits = 0; const out = [];
+  for (const v of data.slice(0, -6)){ acc = (acc << 5) | v; bits += 5; if (bits >= 8){ bits -= 8; out.push((acc >> bits) & 255); acc &= (1 << bits) - 1; } }
+  return { hrp, bytes: Uint8Array.from(out) };
+}
+
+function makeKey(d, x){
+  if (x === undefined) x = pubkeyX(d);
+  return { npub: bech32Encode("npub", bytes32(x)), nsec: bech32Encode("nsec", bytes32(d)), pubkey_hex: hex32(x), privkey_hex: hex32(d) };
+}
+
+// Vanity: random start, then +G per try (one point addition per attempt); reseed rarely.
+function* vanityGen(prefix){
+  let want = 0n; for (const c of prefix) want = (want << 5n) | BigInt(CHARSET.indexOf(c));
+  const shift = BigInt(256 - 5 * prefix.length);
+  for (;;){
+    let d = randScalar(), q = mulG(d);
+    for (let i = 0; i < 1 << 20; i++){
+      const x = affineX(q);
+      if ((x >> shift) === want) return { d, x };
+      yield;
+      q = jadd(q, G); d += 1n;
+      if (d >= N || q[2] === 0n) break;
+    }
+  }
+}
+
+const FIELDS = ["npub", "nsec", "pubkey_hex", "privkey_hex"];
+function render(keys, fmt){
+  if (fmt === "json") return JSON.stringify({ generated: new Date().toISOString().replace(/\.\d+Z$/, "+00:00"), count: keys.length, keys }, null, 2) + "\n";
+  if (fmt === "jsonl") return keys.map(k => JSON.stringify(k) + "\n").join("");
+  if (fmt === "csv") return FIELDS.join(",") + "\n" + keys.map(k => FIELDS.map(f => k[f]).join(",") + "\n").join("");
+  if (fmt === "txt") return keys.map((k, i) => `# ${i + 1}\nnpub: ${k.npub}\nnsec: ${k.nsec}\npub hex:  ${k.pubkey_hex}\npriv hex: ${k.privkey_hex}\n`).join("\n");
+  if (fmt === "npub" || fmt === "nsec") return keys.map(k => k[fmt] + "\n").join("");
+  throw new Error("unknown format");
+}
+if (typeof globalThis !== "undefined") globalThis.NostrCore = { pubkeyX, randScalar, makeKey, bech32Encode, bech32Decode, vanityGen, render, GX, N, CHARSET };
+</script>
+
+<script>
+const $ = id => document.getElementById(id);
+const CORE = globalThis.NostrCore;
+let keys = [], busy = false, cancelled = false, saved = true, shownPrefix = "";
+const fmt = () => document.querySelector('input[name=fmt]:checked').value;
+const EXT = { json: "json", jsonl: "jsonl", csv: "csv", txt: "txt", npub: "txt", nsec: "txt" };
+const MIME = { json: "application/json", jsonl: "application/x-ndjson", csv: "text/csv", txt: "text/plain" };
+function status(msg, cls){ const s = $("status"); s.textContent = msg; s.className = cls || ""; }
+
+// ---- theme toggle (same behaviour and storage key as age-good) ----
+(function(){
+  const root = document.documentElement, mq = matchMedia("(prefers-color-scheme: light)");
+  const eff = () => root.getAttribute("data-theme") || (mq.matches ? "light" : "dark");
+  const sync = () => { const e = eff(); root.setAttribute("data-effective-theme", e); const l = e === "dark" ? "Switch to light mode" : "Switch to dark mode"; const b = $("theme-toggle"); b.title = l; b.setAttribute("aria-label", l); };
+  $("theme-toggle").addEventListener("click", () => { const n = eff() === "dark" ? "light" : "dark"; root.setAttribute("data-theme", n); try { localStorage.setItem("age-theme", n); } catch (e) {} sync(); });
+  mq.addEventListener && mq.addEventListener("change", sync); sync();
+})();
+
+function readPrefix(){
+  const p = $("prefix").value.trim().toLowerCase();
+  const bad = [...new Set([...p].filter(c => !CORE.CHARSET.includes(c)))];
+  return { p, bad };
+}
+const BASE_HINT = $("vhint").innerHTML;
+const MAX_PREFIX = 5;
+let rate = 25000; // tries per second; replaced by the measured speed after a vanity run
+// A whole number from 1 to 10000, else NaN. Number() so "1e1" means 10 and "2.5" is rejected.
+function readCount(){
+  const s = $("count").value.trim();
+  const n = s === "" ? NaN : Number(s);
+  return Number.isInteger(n) && n >= 1 && n <= 10000 ? n : NaN;
+}
+function human(sec){
+  if (sec < 90){ const s = Math.max(1, Math.round(sec)); return "about " + s + (s === 1 ? " second" : " seconds"); }
+  if (sec < 5400) return "about " + Math.round(sec / 60) + " minutes";
+  if (sec < 172800) return "about " + (sec / 3600).toFixed(1) + " hours";
+  return "about " + Math.round(sec / 86400) + " days";
+}
+function validate(){
+  const c = readCount(), { p, bad } = readPrefix(); let why = "";
+  if (isNaN(c)) why = "Count must be a whole number between 1 and 10000";
+  else if (bad.length) why = "Not allowed in an npub: " + bad.join(" ");
+  else if (p.length > MAX_PREFIX) why = "Prefix can be at most " + MAX_PREFIX + " characters here (the Python tool allows 6)";
+  $("why").textContent = why; $("go").disabled = busy || !!why;
+  if (!why && p){
+    const tries = 32 ** p.length, per = tries / rate;
+    $("vhint").textContent = "About " + tries.toLocaleString() + " tries per key, " + human(per) + " per key" + (isNaN(c) ? "" : ", " + human(per * c) + " in total") + " on this device (estimate)." + (per > 600 ? " Consider the Python tool for this." : "");
+  } else if (!p) $("vhint").innerHTML = BASE_HINT;
+  return !why;
+}
+["count", "prefix"].forEach(id => { $(id).addEventListener("input", validate); $(id).addEventListener("keydown", e => { if (e.key === "Enter" && !$("go").disabled) $("go").click(); }); });
+
+function drawRows(){
+  const reveal = $("reveal").checked, SHOW = 100, tb = $("rows"), frag = document.createDocumentFragment();
+  tb.textContent = "";
+  keys.slice(0, SHOW).forEach((k, i) => {
+    const tr = document.createElement("tr");
+    const a = document.createElement("td"); a.className = "n"; a.textContent = i + 1;
+    const b = document.createElement("td"); b.title = k.npub;
+    const full = document.createElement("span"); full.className = "full";
+    const shrt = document.createElement("span"); shrt.className = "short";
+    const hit = shownPrefix && k.npub.startsWith("npub1" + shownPrefix);
+    const lead = hit ? 5 + shownPrefix.length : 5;
+    const fill = (el, tail) => {
+      el.append(k.npub.slice(0, 5));
+      if (hit){ const h = document.createElement("b"); h.className = "hit"; h.textContent = shownPrefix; el.append(h); }
+      el.append(tail);
+    };
+    fill(full, k.npub.slice(lead));
+    fill(shrt, (hit ? "" : k.npub.slice(5, 9)) + "…" + k.npub.slice(-6));
+    b.append(full, shrt);
+    const c = document.createElement("td"); c.className = reveal ? "sec" : "sec masked"; c.textContent = reveal ? k.nsec : k.nsec.slice(0, 5) + "•".repeat(12);
+    const t = document.createElement("td"); t.className = "cp";
+    for (const which of ["npub", "nsec"]){
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "mini"; btn.textContent = which;
+      btn.title = "Copy " + which + " of key " + (i + 1); btn.setAttribute("aria-label", "Copy " + which + " of key " + (i + 1));
+      btn.addEventListener("click", () => copyOne(k, which));
+      t.append(btn);
+    }
+    tr.append(a, b, c, t); frag.append(tr);
+  });
+  tb.append(frag);
+  $("shown").textContent = keys.length > SHOW ? "Showing the first " + SHOW + " of " + keys.length + ". The download has all of them." : "";
+}
+$("reveal").onchange = drawRows;
+async function copyOne(k, which){
+  try { await navigator.clipboard.writeText(k[which]); status("Copied one " + which + "." + (which === "nsec" ? " That is a private key, and the clipboard is visible to other apps: clear it when done." : ""), "ok"); }
+  catch (e){ status("Copy was blocked by the browser. Tick “Show nsec values” and select the text instead.", "err"); }
+}
+
+const tick = () => new Promise(r => setTimeout(r, 0));
+$("go").onclick = async () => {
+  if (!validate()) return;
+  const count = readCount(), { p } = readPrefix();
+  busy = true; cancelled = false; $("go").disabled = true; $("cancel").classList.remove("hidden"); $("bar").classList.remove("hidden");
+  $("results").classList.add("hidden"); keys = []; status("Working...", "working");
+  const t0 = performance.now(); let attempts = 0, lastPaint = 0; const out = [];
+  try {
+    for (let i = 0; i < count && !cancelled; i++){
+      if (p){
+        const g = CORE.vanityGen(p); let r;
+        for (;;){
+          r = g.next(); attempts++;
+          if (r.done) break;
+          if (attempts % 512 === 0){
+            const now = performance.now();
+            if (now - lastPaint > 100){
+              lastPaint = now;
+              status("Key " + (i + 1) + " of " + count + ": " + attempts.toLocaleString() + " tries, " + Math.round(attempts / ((now - t0) / 1000)).toLocaleString() + " per second", "working");
+              $("bar").firstChild.style.width = (100 * i / count) + "%";
+              await tick();
+              if (cancelled) break;
+            }
+          }
+        }
+        if (cancelled) break;
+        out.push(CORE.makeKey(r.value.d, r.value.x));
+      } else {
+        out.push(CORE.makeKey(CORE.randScalar())); attempts++;
+        const now = performance.now();
+        if (now - lastPaint > 100){ lastPaint = now; $("bar").firstChild.style.width = (100 * i / count) + "%"; status("Generated " + (i + 1) + " of " + count, "working"); await tick(); }
+      }
+    }
+    keys = out; shownPrefix = p;
+    if (p && attempts > 2000) rate = attempts / ((performance.now() - t0) / 1000);
+    const secs = ((performance.now() - t0) / 1000).toFixed(1);
+    if (!keys.length) status(cancelled ? "Cancelled." : "No keys generated.", "err");
+    else {
+      saved = false; drawRows(); $("results").classList.remove("hidden");
+      status((cancelled ? "Cancelled: kept " + keys.length + " finished keys. " : "Done. ") + keys.length + " key" + (keys.length === 1 ? "" : "s") + " in " + secs + "s. Download them before closing this page.", "ok");
+    }
+  } catch (err){ status("Failed: " + (err && err.message || err), "err"); }
+  finally { busy = false; $("cancel").classList.add("hidden"); $("bar").classList.add("hidden"); $("bar").firstChild.style.width = "0"; validate(); }
+};
+$("cancel").onclick = () => { cancelled = true; };
+
+function stamp(){ const d = new Date(), z = n => String(n).padStart(2, "0"); return d.getFullYear() + z(d.getMonth() + 1) + z(d.getDate()) + "-" + z(d.getHours()) + z(d.getMinutes()) + z(d.getSeconds()); }
+$("dl").onclick = () => {
+  if (!keys.length) return;
+  const f = fmt(), name = "nostr-batcher-" + stamp() + "." + EXT[f];
+  const url = URL.createObjectURL(new Blob([CORE.render(keys, f)], { type: MIME[f] || "text/plain" }));
+  const a = document.createElement("a"); a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+  saved = true; status("Done. File: " + name + " — look in your Downloads folder (or the folder your browser saves to). It contains private keys in plain text.", "ok");
+};
+$("copy").onclick = async () => {
+  if (!keys.length) return;
+  try { await navigator.clipboard.writeText(CORE.render(keys, fmt())); status("Copied " + keys.length + " keys (" + fmt() + "). The clipboard is visible to other apps: clear it when done.", "ok"); }
+  catch (e){ status("Copy was blocked by the browser. Use Download instead.", "err"); }
+};
+$("clear").onclick = () => {
+  if (keys.length && !saved && !confirm("These keys are not downloaded yet. Clear them anyway?")) return;
+  keys = []; saved = true; $("rows").textContent = ""; $("results").classList.add("hidden"); status("Keys cleared from this page.");
+};
+window.addEventListener("beforeunload", e => { if (keys.length && !saved){ e.preventDefault(); e.returnValue = ""; } });
+validate();
+</script>
+</body></html>
